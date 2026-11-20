@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regali Santa Lucia & Natale</title>
+<style>
+  :root { --bg:#f6f3ee; --card:#fff; --ink:#2b2b2b; --muted:#777; --accent:#b23a48; --line:#e3ddd3; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--accent); color:#fff; padding:16px 20px; }
+  header h1 { margin:0; font-size:1.3rem; }
+  main { max-width:900px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  h2 { margin:0 0 12px; font-size:1.1rem; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  input, select, textarea, button { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:6px; }
+  input, select, textarea { background:#fff; }
+  input[type=text], input[type=number] { flex:1; min-width:120px; }
+  button { background:var(--accent); color:#fff; border:none; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  button.danger { background:#fff; color:#b00; border:1px solid #b00; }
+  button:hover { opacity:.9; }
+  .person { border-top:1px solid var(--line); padding-top:12px; margin-top:12px; }
+  .person:first-child { border-top:none; margin-top:0; padding-top:0; }
+  .person-head { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .person-head strong { font-size:1.05rem; }
+  .gift { display:grid; grid-template-columns: 1fr; gap:6px; background:#faf8f5; border-radius:8px; padding:10px; margin-top:8px; }
+  .gift .top { display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap; }
+  .gift .idea { font-weight:600; }
+  .gift .meta { color:var(--muted); font-size:.9rem; }
+  .badge { font-size:.75rem; padding:3px 8px; border-radius:12px; background:var(--line); }
+  .badge.idea { background:#e8eef9; }
+  .badge.da { background:#fdf0d5; }
+  .badge.comprato { background:#dff2e1; }
+  .badge.incartato { background:#eadff5; }
+  .badge.consegnato { background:#cfe9e6; }
+  .tag { font-size:.75rem; color:#fff; background:#5a6b7d; padding:2px 8px; border-radius:12px; }
+  .tag.natale { background:#2f7a45; }
+  .tag.lucia { background:#3a6ea5; }
+  .totals { color:var(--muted); font-size:.9rem; margin-top:8px; }
+  .empty { color:var(--muted); font-style:italic; }
+  .hidden { display:none; }
+  .checklist { margin-top:10px; background:#fff; border:1px dashed var(--line); border-radius:8px; padding:10px; }
+  .item { display:flex; align-items:center; gap:8px; padding:4px 0; }
+  .item span { flex:1; }
+  .item.done span { text-decoration:line-through; color:var(--muted); }
+  .item input[type=checkbox] { width:18px; height:18px; }
+  button.small { padding:2px 8px; }
+  @media (max-width:600px) { .row { flex-direction:column; align-items:stretch; } }
+</style>
+</head>
+<body>
+<header><h1>🎁 Regali Santa Lucia & Natale</h1></header>
+<main>
+
+  <section class="card">
+    <h2>Aggiungi persona</h2>
+    <div class="row">
+      <input type="text" id="personName" placeholder="Nome (es. Marta)">
+      <button id="addPersonBtn">Aggiungi</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Aggiungi regalo / idea</h2>
+    <div class="row">
+      <select id="giftPerson"></select>
+      <select id="giftOcc">
+        <option value="natale">Natale</option>
+        <option value="lucia">Santa Lucia</option>
+      </select>
+      <input type="text" id="giftIdea" placeholder="Idea o regalo">
+    </div>
+    <div class="row">
+      <input type="number" id="giftPrice" placeholder="Prezzo €" step="0.01" min="0">
+      <select id="giftStatus">
+        <option value="idea">Idea</option>
+        <option value="da comprare">Da comprare</option>
+        <option value="comprato">Comprato</option>
+        <option value="incartato">Incartato</option>
+        <option value="consegnato">Consegnato</option>
+      </select>
+      <input type="text" id="giftNote" placeholder="Note (negozio, taglia, link...)">
+      <button id="addGiftBtn">Aggiungi</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Lista</h2>
+    <div id="list"></div>
+    <div class="totals" id="totals"></div>
+  </section>
+
+  <section class="card">
+    <h2>Backup</h2>
+    <div class="row">
+      <button class="ghost" id="exportBtn">Esporta dati (JSON)</button>
+      <label class="ghost" style="padding:8px 10px;border:1px solid var(--accent);border-radius:6px;color:var(--accent);cursor:pointer;">
+        Importa dati <input type="file" id="importFile" accept="application/json" class="hidden">
+      </label>
+    </div>
+    <p class="totals">I dati restano nel browser di questo dispositivo. Esporta un backup ogni tanto per non perderli.</p>
+  </section>
+
+</main>
+
+<script>
+const KEY = "regali_portale_v1";
+let state = load();
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { console.error(e); }
+  return { persons: [], gifts: [] };
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function fmtEuro(n) { return Number(n || 0).toLocaleString("it-IT", { style:"currency", currency:"EUR" }); }
+function statusClass(s) { return s.replace(/\s+/g, "-"); }
+
+function findPerson(id) { return state.persons.find(p => p.id === id); }
+
+function checklistHtml(p) {
+  const items = p.items || [];
+  const rows = items.map(it => `
+    <label class="item ${it.done ? "done" : ""}">
+      <input type="checkbox" data-act="toggleItem" data-pid="${p.id}" data-id="${it.id}" ${it.done ? "checked" : ""}>
+      <span>${esc(it.text)}</span>
+      <button class="danger small" data-act="delItem" data-pid="${p.id}" data-id="${it.id}">×</button>
+    </label>`).join("");
+  const done = items.filter(i => i.done).length;
+  return `
+    <div class="checklist">
+      <div class="meta"><strong>Lista</strong> · ${done}/${items.length} fatti</div>
+      ${rows || `<p class="empty">Lista vuota.</p>`}
+      <div class="row" style="margin-top:6px;">
+        <input type="text" class="newItem" data-pid="${p.id}" placeholder="Aggiungi voce (es. carta regalo, nastro...)">
+        <button class="ghost" data-act="addItem" data-pid="${p.id}">Aggiungi</button>
+      </div>
+    </div>`;
+}
+
+function addItem(pid) {
+  const p = findPerson(pid);
+  if (!p) return;
+  const input = document.querySelector(`.newItem[data-pid="${pid}"]`);
+  const text = input ? input.value.trim() : "";
+  if (!text) return;
+  p.items = p.items || [];
+  p.items.push({ id: uid(), text, done: false });
+  save(); renderList();
+}
+
+function renderPersonSelect() {
+  const sel = document.getElementById("giftPerson");
+  const prev = sel.value;
+  sel.innerHTML = state.persons.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  if (prev && state.persons.some(p => p.id === prev)) sel.value = prev;
+}
+
+function renderList() {
+  const box = document.getElementById("list");
+  if (state.persons.length === 0) {
+    box.innerHTML = `<p class="empty">Nessuna persona ancora. Aggiungine una sopra.</p>`;
+    document.getElementById("totals").textContent = "";
+    return;
+  }
+  box.innerHTML = state.persons.map(p => {
+    const gifts = state.gifts.filter(g => g.personId === p.id);
+    const giftsHtml = gifts.length === 0
+      ? `<p class="empty">Nessun regalo ancora.</p>`
+      : gifts.map(g => `
+        <div class="gift">
+          <div class="top">
+            <span class="idea">${esc(g.idea)}</span>
+            <span>
+              <span class="tag ${g.occasion}">${g.occasion === "lucia" ? "Santa Lucia" : "Natale"}</span>
+              <span class="badge ${statusClass(g.status)}">${esc(g.status)}</span>
+            </span>
+          </div>
+          <div class="meta">${g.price ? fmtEuro(g.price) : "prezzo non indicato"}${g.note ? " · " + esc(g.note) : ""}</div>
+          <div class="row" style="margin:4px 0 0;">
+            <select data-act="status" data-id="${g.id}">
+              ${["idea","da comprare","comprato","incartato","consegnato"].map(s =>
+                `<option ${s === g.status ? "selected" : ""}>${s}</option>`).join("")}
+            </select>
+            <input type="number" step="0.01" min="0" placeholder="Prezzo €" value="${g.price ?? ""}" data-act="price" data-id="${g.id}" style="max-width:130px;">
+            <button class="danger" data-act="delGift" data-id="${g.id}">Elimina</button>
+          </div>
+        </div>`).join("");
+    const total = gifts.reduce((s, g) => s + Number(g.price || 0), 0);
+    return `
+      <div class="person">
+        <div class="person-head">
+          <strong>${esc(p.name)}</strong>
+          <span>
+            <span class="totals">Totale: ${fmtEuro(total)}</span>
+            <button class="danger" data-act="delPerson" data-id="${p.id}">Rimuovi persona</button>
+          </span>
+        </div>
+        ${giftsHtml}
+        ${checklistHtml(p)}
+      </div>`;
+  }).join("");
+
+  const grand = state.gifts.reduce((s, g) => s + Number(g.price || 0), 0);
+  const bought = state.gifts.filter(g => ["comprato","incartato","consegnato"].includes(g.status)).length;
+  document.getElementById("totals").textContent =
+    `${state.gifts.length} regali · ${bought} già acquistati · Totale previsto ${fmtEuro(grand)}`;
+}
+
+function renderAll() { renderPersonSelect(); renderList(); }
+
+document.getElementById("addPersonBtn").onclick = () => {
+  const name = document.getElementById("personName").value.trim();
+  if (!name) return;
+  state.persons.push({ id: uid(), name });
+  save();
+  document.getElementById("personName").value = "";
+  renderAll();
+};
+
+document.getElementById("addGiftBtn").onclick = () => {
+  const personId = document.getElementById("giftPerson").value;
+  const idea = document.getElementById("giftIdea").value.trim();
+  if (!personId) { alert("Aggiungi prima una persona."); return; }
+  if (!idea) return;
+  const priceVal = document.getElementById("giftPrice").value;
+  state.gifts.push({
+    id: uid(),
+    personId,
+    occasion: document.getElementById("giftOcc").value,
+    idea,
+    price: priceVal === "" ? null : Number(priceVal),
+    status: document.getElementById("giftStatus").value,
+    note: document.getElementById("giftNote").value.trim()
+  });
+  save();
+  document.getElementById("giftIdea").value = "";
+  document.getElementById("giftPrice").value = "";
+  document.getElementById("giftNote").value = "";
+  renderAll();
+};
+
+document.getElementById("list").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (btn.dataset.act === "delGift" && confirm("Eliminare questo regalo?")) {
+    state.gifts = state.gifts.filter(g => g.id !== id);
+  } else if (btn.dataset.act === "delPerson" && confirm("Rimuovere la persona e tutti i suoi regali?")) {
+    state.persons = state.persons.filter(p => p.id !== id);
+    state.gifts = state.gifts.filter(g => g.personId !== id);
+  } else return;
+  save(); renderAll();
+});
+
+document.getElementById("list").addEventListener("change", e => {
+  const el = e.target;
+  const g = state.gifts.find(x => x.id === el.dataset.id);
+  if (!g) return;
+  if (el.dataset.act === "status") g.status = el.value;
+  if (el.dataset.act === "price") g.price = el.value === "" ? null : Number(el.value);
+  save(); renderList();
+});
+
+document.getElementById("list").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  if (btn.dataset.act === "addItem") {
+    addItem(btn.dataset.pid);
+  } else if (btn.dataset.act === "delItem") {
+    const p = findPerson(btn.dataset.pid);
+    if (p) { p.items = (p.items || []).filter(i => i.id !== btn.dataset.id); save(); renderList(); }
+  }
+});
+
+document.getElementById("list").addEventListener("change", e => {
+  if (e.target.dataset.act !== "toggleItem") return;
+  const p = findPerson(e.target.dataset.pid);
+  const it = p && (p.items || []).find(i => i.id === e.target.dataset.id);
+  if (it) { it.done = e.target.checked; save(); renderList(); }
+});
+
+document.getElementById("list").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.classList.contains("newItem")) addItem(e.target.dataset.pid);
+});
+
+document.getElementById("exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `regali-backup-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+document.getElementById("importFile").onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data.persons) || !Array.isArray(data.gifts)) throw new Error("formato");
+      if (!confirm("Sostituire i dati attuali con quelli del backup?")) return;
+      state = data; save(); renderAll();
+    } catch { alert("File non valido."); }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+};
+
+renderAll();
+</script>
+</body>
+</html>
