@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Regali Santa Lucia & Natale</title>
+<style>
+  :root { --bg:#f6f3ee; --card:#fff; --ink:#2b2b2b; --muted:#777; --accent:#b23a48; --line:#e3ddd3; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--accent); color:#fff; padding:16px 20px; }
+  header h1 { margin:0; font-size:1.3rem; }
+  main { max-width:900px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  h2 { margin:0 0 12px; font-size:1.1rem; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  input, select, button { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  input[type=text] { flex:1; min-width:140px; }
+  button { background:var(--accent); color:#fff; border:none; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--accent); border:1px solid var(--accent); }
+  button.danger { background:#fff; color:#b00; border:1px solid #b00; }
+  button.small { padding:2px 8px; }
+  button:hover { opacity:.9; }
+  .person { border-top:1px solid var(--line); padding-top:12px; margin-top:12px; }
+  .person:first-child { border-top:none; margin-top:0; padding-top:0; }
+  .person-head { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .person-head strong { font-size:1.05rem; }
+  .meta { color:var(--muted); font-size:.9rem; margin:6px 0; }
+  .empty { color:var(--muted); font-style:italic; }
+  .gift { background:#faf8f5; border-radius:8px; padding:10px; margin-top:8px; }
+  .gift .top { display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  .gift .idea { font-weight:600; }
+  .gift select { flex:1; min-width:140px; }
+  .pair { padding:8px 0; border-bottom:1px solid var(--line); }
+  .pair:last-child { border-bottom:none; }
+  .hidden { display:none; }
+  @media (max-width:600px) { .row { flex-direction:column; align-items:stretch; } }
+</style>
+</head>
+<body>
+<header><h1>🎁 Regali Santa Lucia & Natale</h1></header>
+<main>
+
+  <section class="card">
+    <h2>Persone</h2>
+    <div class="row">
+      <input type="text" id="personName" placeholder="Nome (es. Marta)">
+      <button id="addPersonBtn">Aggiungi persona</button>
+    </div>
+    <div id="persons"></div>
+  </section>
+
+  <section class="card">
+    <h2>Chi fa il regalo a chi</h2>
+    <div id="pairs"></div>
+  </section>
+
+  <section class="card">
+    <h2>Backup</h2>
+    <div class="row">
+      <button class="ghost" id="exportBtn">Esporta dati (JSON)</button>
+      <label class="ghost" style="padding:8px 10px;border:1px solid var(--accent);border-radius:6px;color:var(--accent);cursor:pointer;">
+        Importa dati <input type="file" id="importFile" accept="application/json" class="hidden">
+      </label>
+    </div>
+    <p class="meta">I dati restano nel browser di questo dispositivo. Esporta un backup ogni tanto per non perderli.</p>
+  </section>
+
+</main>
+
+<script>
+const KEY = "regali_portale_v2";
+const OCC = { natale: "Natale", lucia: "Santa Lucia", compleanno: "Compleanno" };
+const STATI = ["da comprare", "comprato", "incartato", "consegnato"];
+
+let state = load();
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { console.error(e); }
+  return { persons: [] };
+}
+function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function findPerson(id) { return state.persons.find(p => p.id === id); }
+function nameOf(id) { const p = findPerson(id); return p ? p.name : "?"; }
+
+function itemHtml(p, it) {
+  const giverOpts = state.persons
+    .filter(x => x.id !== p.id)
+    .map(x => `<option value="${x.id}" ${x.id === it.giver ? "selected" : ""}>${esc(x.name)}</option>`).join("");
+  const occOpts = Object.entries(OCC)
+    .map(([k, v]) => `<option value="${k}" ${k === it.occasion ? "selected" : ""}>${v}</option>`).join("");
+  const statOpts = STATI
+    .map(s => `<option ${s === it.status ? "selected" : ""}>${s}</option>`).join("");
+  return `
+    <div class="gift">
+      <div class="top">
+        <span class="idea">${esc(it.text)}</span>
+        <button class="danger small" data-act="delItem" data-pid="${p.id}" data-id="${it.id}">×</button>
+      </div>
+      <div class="row" style="margin:6px 0 0;">
+        <select data-act="occ" data-pid="${p.id}" data-id="${it.id}">
+          <option value="">Occasione...</option>${occOpts}
+        </select>
+        <select data-act="giver" data-pid="${p.id}" data-id="${it.id}">
+          <option value="">Chi lo fa...</option>${giverOpts}
+        </select>
+        <select data-act="status" data-pid="${p.id}" data-id="${it.id}">${statOpts}</select>
+      </div>
+    </div>`;
+}
+
+function renderPersons() {
+  const box = document.getElementById("persons");
+  if (state.persons.length === 0) {
+    box.innerHTML = `<p class="empty">Nessuna persona ancora. Aggiungine una sopra.</p>`;
+    return;
+  }
+  box.innerHTML = state.persons.map(p => {
+    const items = p.items || [];
+    return `
+      <div class="person">
+        <div class="person-head">
+          <strong>${esc(p.name)}</strong>
+          <button class="danger small" data-act="delPerson" data-pid="${p.id}">Rimuovi persona</button>
+        </div>
+        <p class="meta">Regali per ${esc(p.name)}:</p>
+        ${items.map(it => itemHtml(p, it)).join("") || `<p class="empty">Nessuna voce.</p>`}
+        <div class="row" style="margin-top:8px;">
+          <input type="text" class="newItem" data-pid="${p.id}" placeholder="Nuovo regalo o idea">
+          <button class="ghost" data-act="addItem" data-pid="${p.id}">Aggiungi</button>
+        </div>
+      </div>`;
+  }).join("");
+}
+
+function renderPairs() {
+  const rows = [];
+  state.persons.forEach(p => (p.items || []).forEach(it => {
+    if (it.giver) rows.push({
+      giver: it.giver,
+      receiver: p.name,
+      text: it.text,
+      occ: OCC[it.occasion] || "occasione da scegliere",
+      status: it.status
+    });
+  }));
+  const box = document.getElementById("pairs");
+  if (rows.length === 0) {
+    box.innerHTML = `<p class="empty">Nessun abbinamento ancora: scegli "Chi lo fa" nelle voci delle persone.</p>`;
+    return;
+  }
+  rows.sort((a, b) => nameOf(a.giver).localeCompare(nameOf(b.giver), "it"));
+  box.innerHTML = rows.map(r => `
+    <div class="pair">
+      <strong>${esc(nameOf(r.giver))}</strong> → ${esc(r.receiver)}: ${esc(r.text)}
+      <div class="meta">${r.occ} · ${esc(r.status)}</div>
+    </div>`).join("");
+}
+
+function renderAll() { renderPersons(); renderPairs(); }
+
+function addItem(pid) {
+  const p = findPerson(pid);
+  if (!p) return;
+  const input = document.querySelector(`.newItem[data-pid="${pid}"]`);
+  const text = input ? input.value.trim() : "";
+  if (!text) return;
+  p.items = p.items || [];
+  p.items.push({ id: uid(), text, occasion: "", giver: "", status: "da comprare" });
+  save(); renderAll();
+}
+
+document.getElementById("addPersonBtn").onclick = () => {
+  const input = document.getElementById("personName");
+  const name = input.value.trim();
+  if (!name) return;
+  state.persons.push({ id: uid(), name, items: [] });
+  save();
+  input.value = "";
+  renderAll();
+};
+
+const root = document.getElementById("persons");
+
+root.addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const { act, pid, id } = btn.dataset;
+  if (act === "addItem") {
+    addItem(pid);
+  } else if (act === "delItem" && confirm("Eliminare questa voce?")) {
+    const p = findPerson(pid);
+    if (p) p.items = p.items.filter(i => i.id !== id);
+    save(); renderAll();
+  } else if (act === "delPerson" && confirm("Rimuovere la persona e le sue voci?")) {
+    state.persons = state.persons.filter(p => p.id !== pid);
+    state.persons.forEach(p => (p.items || []).forEach(i => { if (i.giver === pid) i.giver = ""; }));
+    save(); renderAll();
+  }
+});
+
+root.addEventListener("change", e => {
+  const el = e.target;
+  if (!el.dataset.act) return;
+  const p = findPerson(el.dataset.pid);
+  const it = p && (p.items || []).find(i => i.id === el.dataset.id);
+  if (!it) return;
+  if (el.dataset.act === "occ") it.occasion = el.value;
+  if (el.dataset.act === "giver") it.giver = el.value;
+  if (el.dataset.act === "status") it.status = el.value;
+  save(); renderAll();
+});
+
+root.addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.target.classList.contains("newItem")) addItem(e.target.dataset.pid);
+});
+
+document.getElementById("exportBtn").onclick = () => {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `regali-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+
+document.getElementById("importFile").onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!Array.isArray(data.persons)) throw new Error("formato");
+      if (!confirm("Sostituire i dati attuali con quelli del backup?")) return;
+      state = data; save(); renderAll();
+    } catch { alert("File non valido."); }
+  };
+  reader.readAsText(file);
+  e.target.value = "";
+};
+
+renderAll();
+</script>
+</body>
+</html>
