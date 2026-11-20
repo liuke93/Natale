@@ -52,7 +52,13 @@
 
   <section class="card">
     <h2>Chi fa il regalo a chi</h2>
-    <div id="pairs"></div>
+    <p class="meta">Inserisci qui chi fa i regali: poi li scegli dal menu "Chi lo fa" di ogni voce.</p>
+    <div class="row">
+      <input type="text" id="giverName" placeholder="Nome di chi fa i regali (es. Luca)">
+      <button id="addGiverBtn">Aggiungi</button>
+    </div>
+    <div id="givers"></div>
+    <div id="pairs" style="margin-top:12px;"></div>
   </section>
 
   <section class="card">
@@ -78,9 +84,9 @@ let state = load();
 function load() {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) { const s = JSON.parse(raw); s.givers = s.givers || []; return s; }
   } catch (e) { console.error(e); }
-  return { persons: [] };
+  return { persons: [], givers: [] };
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -88,11 +94,10 @@ function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 }
 function findPerson(id) { return state.persons.find(p => p.id === id); }
-function nameOf(id) { const p = findPerson(id); return p ? p.name : "?"; }
+function nameOf(id) { const x = (state.givers || []).find(g => g.id === id) || findPerson(id); return x ? x.name : "?"; }
 
 function itemHtml(p, it) {
-  const giverOpts = state.persons
-    .filter(x => x.id !== p.id)
+  const giverOpts = (state.givers || [])
     .map(x => `<option value="${x.id}" ${x.id === it.giver ? "selected" : ""}>${esc(x.name)}</option>`).join("");
   const occOpts = Object.entries(OCC)
     .map(([k, v]) => `<option value="${k}" ${k === it.occasion ? "selected" : ""}>${v}</option>`).join("");
@@ -164,7 +169,38 @@ function renderPairs() {
     </div>`).join("");
 }
 
-function renderAll() { renderPersons(); renderPairs(); }
+function renderGivers() {
+  const list = state.givers || [];
+  document.getElementById("givers").innerHTML = list.length === 0
+    ? `<p class="empty">Nessuno ancora.</p>`
+    : list.map(g => `
+      <div class="row" style="justify-content:space-between;margin-bottom:4px;">
+        <span>${esc(g.name)}</span>
+        <button class="danger small" data-act="delGiver" data-id="${g.id}">×</button>
+      </div>`).join("");
+}
+
+function renderAll() { renderPersons(); renderGivers(); renderPairs(); }
+
+document.getElementById("addGiverBtn").onclick = () => {
+  const input = document.getElementById("giverName");
+  const name = input.value.trim();
+  if (!name) return;
+  state.givers = state.givers || [];
+  state.givers.push({ id: uid(), name });
+  save();
+  input.value = "";
+  renderAll();
+};
+
+document.getElementById("givers").addEventListener("click", e => {
+  const btn = e.target.closest("button[data-act='delGiver']");
+  if (!btn || !confirm("Rimuovere questa persona da chi fa i regali?")) return;
+  const id = btn.dataset.id;
+  state.givers = state.givers.filter(g => g.id !== id);
+  state.persons.forEach(p => (p.items || []).forEach(i => { if (i.giver === id) i.giver = ""; }));
+  save(); renderAll();
+});
 
 function addItem(pid) {
   const p = findPerson(pid);
@@ -239,6 +275,7 @@ document.getElementById("importFile").onchange = e => {
     try {
       const data = JSON.parse(reader.result);
       if (!Array.isArray(data.persons)) throw new Error("formato");
+      data.givers = data.givers || [];
       if (!confirm("Sostituire i dati attuali con quelli del backup?")) return;
       state = data; save(); renderAll();
     } catch { alert("File non valido."); }
